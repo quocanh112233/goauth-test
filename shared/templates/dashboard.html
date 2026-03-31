@@ -1,4 +1,6 @@
-{{template "base" .}}
+<!-- Trang quản trị — CHỈ dành cho admin (role=admin) -->
+<!-- User role=user truy cập → redirect /home (handler xử lý) -->
+<!-- User role=admin được redirect tới đây sau login -->
 {{define "title"}}Dashboard{{end}}
 {{define "content"}}
 <div class="dashboard-container">
