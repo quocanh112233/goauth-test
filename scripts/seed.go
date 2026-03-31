@@ -125,6 +125,7 @@ func seedAdmin(ctx context.Context, db *mongo.Database) {
 
 	admin := bson.M{
 		"name":       "Admin",
+		"email":      email,
 		"phone":      "0900000000",
 		"password":   string(hashedPassword),
 		"role":       "admin",

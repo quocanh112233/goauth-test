@@ -1,0 +1,21 @@
+app = "goauth-gin"
+primary_region = "sin"
+
+[env]
+  PORT = "8081"
+  MONGO_DB = "goauth"
+  APP_ENV = "production"
+  TEMPLATE_DIR = "./shared/templates"
+
+[http_service]
+  internal_port = 8081
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "30s"
+  method = "GET"
+  path = "/health"
+  timeout = "5s"
