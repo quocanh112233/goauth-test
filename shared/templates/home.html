@@ -1,0 +1,28 @@
+{{template "base" .}}
+{{define "title"}}Trang chủ{{end}}
+{{define "content"}}
+<div class="home-container">
+    <div style="text-align: center;">
+        <span class="framework-badge">Framework: {{.Framework}}</span>
+        <h1>Hồ sơ cá nhân</h1>
+        <p>Thông tin tài khoản của bạn</p>
+    </div>
+    
+    <div class="user-info">
+        <p><strong>Họ tên:</strong> {{.User.Name}}</p>
+        <p><strong>Email:</strong> {{.User.Email}}</p>
+        <p><strong>Điện thoại:</strong> {{.User.Phone}}</p>
+        <p><strong>Vai trò:</strong> <span style="color: var(--primary); text-transform: capitalize;">{{.User.Role}}</span></p>
+    </div>
+
+    <form method="POST" action="/logout">
+        <button type="submit" class="logout-btn">Đăng xuất</button>
+    </form>
+    
+    {{if eq .User.Role "admin"}}
+    <p style="margin-top: 16px; margin-bottom: 0; font-size: 0.85rem;">
+        Bạn là quản trị viên? <a href="/dashboard" style="color: var(--primary); text-decoration: none;">Đến Dashboard</a>
+    </p>
+    {{end}}
+</div>
+{{end}}

@@ -1,0 +1,23 @@
+{{template "base" .}}
+{{define "title"}}Dashboard{{end}}
+{{define "content"}}
+<div class="dashboard-container">
+    <div style="text-align: center;">
+        <span class="framework-badge">Framework: {{.Framework}}</span>
+        <h1>Admin Dashboard</h1>
+        <p>Chào mừng quản trị viên, <strong>{{.User.Name}}</strong>!</p>
+    </div>
+
+    <div style="background: rgba(79, 70, 229, 0.05); border: 1px dashed var(--primary); border-radius: 16px; padding: 30px; margin-bottom: 24px; text-align: center;">
+        <p style="margin-bottom: 0;">Số liệu thống kê hoặc danh sách người dùng sẽ xuất hiện ở đây.</p>
+    </div>
+
+    <form method="POST" action="/logout">
+        <button type="submit" class="logout-btn">Đăng xuất</button>
+    </form>
+    
+    <p style="margin-top: 16px; margin-bottom: 0; font-size: 0.85rem;">
+        Quay lại <a href="/home" style="color: var(--primary); text-decoration: none;">Trang cá nhân</a>
+    </p>
+</div>
+{{end}}

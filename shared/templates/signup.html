@@ -1,0 +1,20 @@
+{{template "base" .}}
+{{define "title"}}Đăng ký{{end}}
+{{define "content"}}
+<div class="auth-container" style="max-width: 480px;">
+    <h1>Đăng ký</h1>
+    <p>Bắt đầu hành trình của bạn ngay hôm nay</p>
+    {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+    <form method="POST" action="/signup">
+        <input type="text" name="name" placeholder="Họ và tên" required>
+        <input type="email" name="email" placeholder="Email" required>
+        <input type="tel" name="phone" placeholder="Số điện thoại" required>
+        <input type="password" name="password" placeholder="Mật khẩu" required>
+        <input type="password" name="confirm_password" placeholder="Xác nhận mật khẩu" required>
+        <button type="submit" style="margin-top: 16px;">Tạo tài khoản</button>
+    </form>
+    <p style="margin-top: 24px; margin-bottom: 0;">
+        Đã có tài khoản? <a href="/login">Đăng nhập</a>
+    </p>
+</div>
+{{end}}
