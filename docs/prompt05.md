@@ -33,35 +33,55 @@ Gin dùng `r.SetHTMLTemplate()` với custom `html/template` (KHÔNG dùng `gin.
 ```go
 import "html/template"
 
+// --- Custom HTMLRender cho Gin ---
+
+// gin/internal/renderer/renderer.go
+type HTMLRenderer struct {
+    templates map[string]*template.Template
+}
+
+func NewHTMLRenderer(templateDir string) *HTMLRenderer {
+    r := &HTMLRenderer{templates: make(map[string]*template.Template)}
+    pages := []string{"login", "signup", "home", "dashboard", "error"}
+    for _, page := range pages {
+        r.templates[page] = template.Must(template.ParseFiles(
+            filepath.Join(templateDir, "base.html"),
+            filepath.Join(templateDir, page+".html"),
+        ))
+    }
+    return r
+}
+
+// Implement gin.HTMLRender interface
+func (r *HTMLRenderer) Instance(name string, data interface{}) render.Render {
+    return &HTMLInstance{tmpl: r.templates[name], data: data}
+}
+
+type HTMLInstance struct {
+    tmpl *template.Template
+    data interface{}
+}
+
+func (h *HTMLInstance) Render(w http.ResponseWriter) error {
+    return h.tmpl.ExecuteTemplate(w, "base", h.data)
+}
+
+func (h *HTMLInstance) WriteContentType(w http.ResponseWriter) {
+    w.Header().Set("Content-Type", "text/html; charset=utf-8")
+}
+```
+
+Sử dụng trong router:
+```go
+// gin/internal/router/router.go
 func Setup(cfg *config.Config, database *mongo.Database) *gin.Engine {
     r := gin.Default()
 
-    // ✅ ĐÚNG: parse từng cặp, dùng template.Must
-    tmpl := template.New("")
+    // Set custom renderer — dùng cfg.TemplateDir (KHÔNG hardcode)
+    r.HTMLRender = renderer.NewHTMLRenderer(cfg.TemplateDir)
 
-    // Parse từng page riêng với base.html
-    pages := []string{"login", "signup", "home", "dashboard", "error"}
-    for _, page := range pages {
-        // Clone base template, rồi parse page template vào
-        t := template.Must(template.ParseFiles(
-            filepath.Join(cfg.TemplateDir, "base.html"),
-            filepath.Join(cfg.TemplateDir, page+".html"),
-        ))
-        // Add vào template set với tên = page name
-        tmpl = template.Must(tmpl.AddParseTree(page, t.Tree))
-    }
-
-    // HOẶC: dùng cách đơn giản hơn — map[string]*template.Template
-    templates := make(map[string]*template.Template)
-    for _, page := range pages {
-        templates[page] = template.Must(template.ParseFiles(
-            filepath.Join(cfg.TemplateDir, "base.html"),
-            filepath.Join(cfg.TemplateDir, page+".html"),
-        ))
-    }
-
-    // Gin cần: r.SetHTMLTemplate(tmpl)
-    // Hoặc implement gin.HTMLRender interface cho map approach
+    // Render trong handler:
+    // c.HTML(200, "login", gin.H{"Error": ""})  ← name = "login" khớp với key trong map
     // ...
 }
 ```
@@ -69,6 +89,8 @@ func Setup(cfg *config.Config, database *mongo.Database) *gin.Engine {
 > ⚠️ **KHÔNG dùng**: `r.LoadHTMLGlob("*.html")` — blocks `{{define "content"}}` sẽ bị override bởi file cuối cùng.
 
 > **Template path**: dùng `cfg.TemplateDir` (không hardcode) — xem `docs/conventions.md` mục 7.
+
+> **Import**: `"github.com/gin-gonic/gin/render"` cho `render.Render` interface.
 
 ### 2. Route Registration
 
