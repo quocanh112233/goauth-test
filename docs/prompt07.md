@@ -8,13 +8,11 @@ Bạn là một **Go DevOps Engineer** thành thạo Fiber framework và Fly.io.
 
 ## Context
 
-Prompt 06 đã có đủ layers cho Fiber. Prompt này hoàn thiện: Router, Health Check, Dockerfile, fly.toml.
-
-Route mapping chi tiết xem `docs/api-spec.md`.
+Prompt 06 đã có đủ layers. Hoàn thiện app. Conventions xem `docs/conventions.md`.
 
 ---
 
-## Dependencies (Prompt phụ thuộc)
+## Dependencies
 
 | Prompt | Đầu ra cần thiết |
 |--------|-----------------|
@@ -27,43 +25,50 @@ Route mapping chi tiết xem `docs/api-spec.md`.
 
 ### 1. fiber/internal/router/router.go
 
-- Template engine: `html.New("../shared/templates", ".html")`
-- Đăng ký routes:
-  ```
-  GET  /              → redirect /login
-  GET  /health        → healthHandler
-  GET  /login         → authHandler.ShowLogin
-  POST /login         → authHandler.Login
-  GET  /signup        → authHandler.ShowSignup
-  POST /signup        → authHandler.Signup
-  GET  /api/me        → apiHandler.GetMe           [auth middleware]
-  GET  /home          → homeHandler.ShowHome        [auth middleware]
-  GET  /dashboard     → dashHandler.ShowDashboard   [auth middleware]
-  POST /logout        → authHandler.Logout          [auth middleware]
-  ```
+Template engine:
+```go
+// Dùng cfg.TemplateDir thay vì hardcode
+engine := html.New(cfg.TemplateDir, ".html")
+app := fiber.New(fiber.Config{Views: engine})
+```
+
+> ⚠️ **Docker path**: Local = `../shared/templates` (default), Docker = `./shared/templates`. Đã xử lý qua `cfg.TemplateDir` + env `TEMPLATE_DIR` (xem `conventions.md` mục 7).
+
+Routes (10 routes — giống pattern Gin prompt05).
 
 ### 2. Health Check
 
-GET `/health` → `{"status": "ok", "framework": "Fiber", "db": "connected"}`
+`{"status":"ok","framework":"Fiber","db":"connected"}`
 
-### 3. fiber/cmd/main.go
+### 3. Dockerfile + fly.toml
 
-- Graceful shutdown: `app.ShutdownWithTimeout(5 * time.Second)`
+fly.toml:
+```toml
+app = "goauth-fiber"
 
-### 4–6. Dockerfile + fly.toml + .dockerignore
+[env]
+  PORT = "8080"
+  MONGO_DB = "goauth"
+  APP_ENV = "production"
+  TEMPLATE_DIR = "./shared/templates"
+```
 
-- Giống pattern Gin (Prompt 05)
-- fly.toml: `app = "goauth-fiber"`, `primary_region = "sin"`
+> `TEMPLATE_DIR = "./shared/templates"` — giải quyết vấn đề path trong Docker.
+
+---
+
+## Anti-Patterns
+
+❌ Không hardcode template path `"../shared/templates"` trong code — dùng `cfg.TemplateDir`
+❌ Không quên `TEMPLATE_DIR` trong fly.toml
 
 ---
 
 ## Acceptance Criteria
 
-1. `cd fiber && go build ./...` pass
-2. E2E: Signup → Login → Home → Logout
-3. Admin Login → Dashboard
-4. `/api/me` → JSON user info
-5. Docker build thành công
+1. E2E: Signup → Login → Home → Logout
+2. Docker build thành công
+3. Template path giải quyết đúng cả local + Docker
 
 ---
 
@@ -71,13 +76,10 @@ GET `/health` → `{"status": "ok", "framework": "Fiber", "db": "connected"}`
 
 | # | Yêu cầu | Trạng thái | Ghi chú |
 |---|---------|------------|---------|
-| 1 | Router đủ 10 routes | 🔲 | |
-| 2 | Health check ping DB | 🔲 | |
-| 3 | Auth routes dùng middleware | 🔲 | |
-| 4 | Graceful shutdown | 🔲 | |
-| 5 | Dockerfile + copy templates | 🔲 | |
-| 6 | fly.toml health check + no secrets | 🔲 | |
-| 7 | E2E flow hoạt động | 🔲 | |
+| 1 | Template engine dùng cfg.TemplateDir | 🔲 | |
+| 2 | 10 routes | 🔲 | |
+| 3 | fly.toml có TEMPLATE_DIR + APP_ENV | 🔲 | |
+| 4 | E2E flow | 🔲 | |
 
 ---
 

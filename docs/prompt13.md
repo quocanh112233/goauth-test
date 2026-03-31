@@ -1,123 +1,70 @@
-# Prompt 13 — Google OAuth: Shared Setup + Gin Implementation
+# Prompt 13 — GitHub Actions CI/CD + Makefile hoàn chỉnh
 
 ## Role
 
-Bạn là một **Go Security Engineer** chuyên OAuth 2.0 / OpenID Connect. Bạn implement Google OAuth đúng chuẩn, tích hợp với hệ thống Access Token + Refresh Token + Sessions hiện có.
+Bạn là một **DevOps Engineer** thành thạo GitHub Actions và Fly.io CLI.
 
 ---
 
 ## Context
 
-Phase 7. Email/password + session auth đã hoàn chỉnh. Thêm "Login with Google".
-
-Flow:
-```
-Click "Login with Google"
-→ GET /auth/google (tạo state cookie, redirect Google)
-→ Google login
-→ GET /auth/google/callback (validate state, exchange code, get user info)
-→ Upsert user (google_id → email → tạo mới)
-→ Tạo session (như login thường)
-→ Set 2 cookies (access_token + refresh_token)
-→ Redirect /home hoặc /dashboard (theo role)
-```
+Phase 6. Tất cả 4 apps hoàn chỉnh. Setup CI/CD + Makefile.
 
 ---
 
-## Dependencies (Prompt phụ thuộc)
+## Dependencies
 
 | Prompt | Đầu ra cần thiết |
 |--------|-----------------|
-| 03 | UserRepo có FindByGoogleID, FindByEmail, UpdateByID |
-| 03 | SessionRepo có Create |
-| 04 | AuthService logic (JWT generation, session creation) |
-| 05 | Gin app hoàn chỉnh đang chạy |
+| 05 | Gin Dockerfile + fly.toml |
+| 07 | Fiber Dockerfile + fly.toml |
+| 10 | stdlib Dockerfile + fly.toml |
+| 12 | Echo Dockerfile + fly.toml |
 
 ---
 
 ## Yêu cầu
 
-### 1. docs/GOOGLE_OAUTH_SETUP.md
+### 1–4. GitHub Actions Workflows
 
-Hướng dẫn setup Google OAuth Console:
-- Tạo project, enable API
-- Tạo OAuth Client ID
-- Redirect URIs:
-  - `http://localhost:808{1,2,3,4}/auth/google/callback`
-  - `https://goauth-{gin,fiber,stdlib,echo}.fly.dev/auth/google/callback`
+4 files: `deploy-gin.yml`, `deploy-fiber.yml`, `deploy-stdlib.yml`, `deploy-echo.yml`
 
-### 2. Config cập nhật
+- Trigger: push `main`, paths: `<approach>/**` + `shared/**`
+- Token riêng: `FLY_API_TOKEN_<APPROACH>`
+- `flyctl deploy --remote-only`
 
-Thêm: `GoogleClientID`, `GoogleClientSecret`, `GoogleRedirectURL` (optional — chỉ warning nếu thiếu)
+### 5. Makefile
 
-### 3. gin/go.mod — thêm `golang.org/x/oauth2 v0.19.0`
+```makefile
+# Development
+run-gin run-fiber run-stdlib run-echo run-all
 
-### 4. gin/internal/service/oauth.go
+# Seed
+seed
 
-```go
-type OAuthService interface {
-    GetAuthURL(state string) string
-    ExchangeToken(ctx context.Context, code string) (*GoogleUser, error)
-    UpsertUser(ctx context.Context, googleUser *GoogleUser) (*model.User, error)
-}
+# Deploy
+deploy-gin deploy-fiber deploy-stdlib deploy-echo deploy-all
+
+# Secrets
+secrets-gin secrets-fiber secrets-stdlib secrets-echo secrets-all
+
+# Test
+test-gin test-fiber test-stdlib test-echo test-all test-coverage
+
+# Utility
+tidy help
 ```
 
-- **UpsertUser** logic:
-  1. Tìm `google_id` → update name/updated_at → return
-  2. Tìm `email` → merge account (set google_id, provider="google") → return
-  3. Không thấy → tạo mới (role="user", provider="google", password="")
-
-> **Sau UpsertUser**: dùng AuthService logic tạo session + 2 tokens (không duplicate code)
-
-### 5. gin/internal/handler/oauth.go
-
-- `InitiateGoogleLogin` — GET /auth/google:
-  - State: `crypto/rand` 16 bytes hex
-  - Cookie `oauth_state`: MaxAge=300, HttpOnly, Secure, SameSite=Lax
-  - Redirect → Google OAuth URL (307)
-
-- `GoogleCallback` — GET /auth/google/callback:
-  - Validate state cookie == query param state
-  - Exchange code → get Google user info
-  - Upsert user
-  - **Tạo session + 2 cookies** (giống POST /login flow):
-    - Access token JWT (30 phút)
-    - Refresh token (random, 7 ngày) + session DB
-  - Xóa cookie `oauth_state`
-  - Redirect theo role: admin→/dashboard, user→/home (303)
-
-### 6. Cập nhật login.html
-
-Thêm nút Google OAuth (thay TODO comment hiện tại):
-```html
-<a href="/auth/google" class="google-btn">Đăng nhập với Google</a>
-```
-
-### 7. Router — thêm 2 routes (public)
-
-```go
-r.GET("/auth/google", oauthHandler.InitiateGoogleLogin)
-r.GET("/auth/google/callback", oauthHandler.GoogleCallback)
-```
-
----
-
-## Anti-Patterns (KHÔNG được làm)
-
-❌ Không hardcode state
-❌ Không bỏ qua state validation
-❌ Không tạo duplicate user khi merge
-❌ Không quên tạo session + 2 cookies trong OAuth callback (giống login flow)
+### 6. README.md CI/CD section
 
 ---
 
 ## Acceptance Criteria
 
-1. `cd gin && go build ./...` pass
-2. Google OAuth flow hoạt động end-to-end
-3. Login Google → set 2 cookies + tạo session
-4. Login Google lần 2 → không duplicate
-5. Local user login Google cùng email → merge
+1. Push `gin/` → chỉ trigger deploy-gin
+2. Push `shared/` → trigger cả 4
+3. `make help` hiển thị targets
+4. `make run-all` chạy 4 server song song
 
 ---
 
@@ -125,19 +72,10 @@ r.GET("/auth/google/callback", oauthHandler.GoogleCallback)
 
 | # | Yêu cầu | Trạng thái | Ghi chú |
 |---|---------|------------|---------|
-| 1 | Config thêm 3 Google fields | 🔲 | |
-| 2 | go.mod thêm oauth2 | 🔲 | |
-| 3 | OAuthService 3 methods | 🔲 | |
-| 4 | UpsertUser: google_id → email → tạo mới | 🔲 | |
-| 5 | Callback tạo session + set 2 cookies | 🔲 | |
-| 6 | Callback redirect theo role | 🔲 | |
-| 7 | State crypto/rand 16 bytes | 🔲 | |
-| 8 | State cookie HttpOnly+Secure MaxAge=300 | 🔲 | |
-| 9 | Validate state trong callback | 🔲 | |
-| 10 | Xóa oauth_state cookie sau callback | 🔲 | |
-| 11 | login.html có nút Google | 🔲 | |
-| 12 | 2 routes OAuth (public) | 🔲 | |
-| 13 | GOOGLE_OAUTH_SETUP.md | 🔲 | |
+| 1 | 4 workflow files | 🔲 | |
+| 2 | shared/** trigger cả 4 | 🔲 | |
+| 3 | Makefile đủ targets | 🔲 | |
+| 4 | README CI/CD section | 🔲 | |
 
 ---
 

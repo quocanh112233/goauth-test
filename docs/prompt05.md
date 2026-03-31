@@ -2,84 +2,99 @@
 
 ## Role
 
-Bạn là một **Go DevOps Engineer** kiêm Backend Developer. Bạn wire tất cả components thành app hoàn chỉnh, đóng gói Docker, và config deploy Fly.io.
+Bạn là một **Go DevOps Engineer** kiêm Backend Developer.
 
 ---
 
 ## Context
 
-Prompt 03 + 04 đã có đủ layers. Prompt này kết nối tất cả: Router, Health Check, main.go, Dockerfile, fly.toml.
+Prompt 03 + 04 đã có đủ layers. Prompt này kết nối tất cả: Router, Template Loading, Health Check, Dockerfile, fly.toml.
 
-Route mapping chi tiết xem `docs/api-spec.md` (section "Route Summary").
+Route mapping xem `docs/api-spec.md`, cookie/env conventions xem `docs/conventions.md`.
 
 ---
 
-## Dependencies (Prompt phụ thuộc)
+## Dependencies
 
 | Prompt | Đầu ra cần thiết |
 |--------|-----------------|
 | 01 | `shared/templates/*.html` (6 files) |
-| 03 | Config, DB, Model (User + Session), Repository (User + Session) |
-| 04 | Service, Handler (Auth + Home + Dashboard + API), Middleware |
+| 03 | Config (có TemplateDir), DB, Model, Repository |
+| 04 | Service, Handler, Middleware |
 
 ---
 
 ## Yêu cầu
 
-### 1. gin/internal/router/router.go
+### 1. gin/internal/router/router.go — Template Loading
 
-Hàm `Setup(cfg *config.Config, database *mongo.Database) *gin.Engine`:
+Gin dùng `r.SetHTMLTemplate()` với custom `html/template` (KHÔNG dùng `gin.LoadHTMLGlob`):
 
-- Tạo Gin engine: `gin.Default()`
-- Load HTML templates: parse mỗi page riêng với base.html
-- Khởi tạo: userRepo → sessionRepo → service → handlers → middleware
-- Đăng ký routes:
+```go
+import "html/template"
 
-  ```
-  GET  /                      → redirect /login (302)
-  GET  /health                → healthHandler.HealthCheck
-  GET  /login                 → authHandler.ShowLogin
-  POST /login                 → authHandler.Login
-  GET  /signup                → authHandler.ShowSignup
-  POST /signup                → authHandler.Signup
-  GET  /api/me                → apiHandler.GetMe              [auth middleware]
+func Setup(cfg *config.Config, database *mongo.Database) *gin.Engine {
+    r := gin.Default()
 
-  // Protected group — áp dụng RequireAuth middleware
-  GET  /home                  → homeHandler.ShowHome           [auth middleware]
-  GET  /dashboard             → dashboardHandler.ShowDashboard [auth middleware]
-  POST /logout                → authHandler.Logout             [auth middleware]
-  ```
+    // ✅ ĐÚNG: parse từng cặp, dùng template.Must
+    tmpl := template.New("")
 
-> **Lưu ý**: `/api/me` cũng dùng auth middleware nhưng middleware sẽ return 401 JSON thay vì redirect (xem Prompt 04 middleware).
+    // Parse từng page riêng với base.html
+    pages := []string{"login", "signup", "home", "dashboard", "error"}
+    for _, page := range pages {
+        // Clone base template, rồi parse page template vào
+        t := template.Must(template.ParseFiles(
+            filepath.Join(cfg.TemplateDir, "base.html"),
+            filepath.Join(cfg.TemplateDir, page+".html"),
+        ))
+        // Add vào template set với tên = page name
+        tmpl = template.Must(tmpl.AddParseTree(page, t.Tree))
+    }
 
-### 2. Health Check Endpoint
+    // HOẶC: dùng cách đơn giản hơn — map[string]*template.Template
+    templates := make(map[string]*template.Template)
+    for _, page := range pages {
+        templates[page] = template.Must(template.ParseFiles(
+            filepath.Join(cfg.TemplateDir, "base.html"),
+            filepath.Join(cfg.TemplateDir, page+".html"),
+        ))
+    }
 
-GET `/health` trả về JSON:
-
-```json
-{
-  "status": "ok",
-  "framework": "Gin",
-  "db": "connected"
+    // Gin cần: r.SetHTMLTemplate(tmpl)
+    // Hoặc implement gin.HTMLRender interface cho map approach
+    // ...
 }
 ```
 
-- Ping MongoDB → nếu fail: `"db": "disconnected"`, status 503
-- Endpoint này **không cần auth**
+> ⚠️ **KHÔNG dùng**: `r.LoadHTMLGlob("*.html")` — blocks `{{define "content"}}` sẽ bị override bởi file cuối cùng.
 
-### 3. gin/cmd/main.go
+> **Template path**: dùng `cfg.TemplateDir` (không hardcode) — xem `docs/conventions.md` mục 7.
 
-- Load config → `db.Connect(cfg)` → setup router
-- Graceful shutdown:
-  - Goroutine chạy server
-  - Main goroutine chờ SIGINT/SIGTERM
-  - `srv.Shutdown(ctx)` timeout 5 giây
-  - `db.Disconnect(client)`
-- Log: `"✓ Connected to MongoDB"`, `"✓ Gin server running on :PORT"`
+### 2. Route Registration
 
-### 4. gin/Dockerfile
+```
+GET  /                → redirect /login (302)
+GET  /health          → healthHandler.HealthCheck
+GET  /login           → authHandler.ShowLogin
+POST /login           → authHandler.Login
+GET  /signup          → authHandler.ShowSignup
+POST /signup          → authHandler.Signup
 
-Multi-stage build:
+// Protected (RequireAuth middleware)
+GET  /home            → homeHandler.ShowHome
+GET  /dashboard       → dashboardHandler.ShowDashboard
+POST /logout          → authHandler.Logout
+GET  /api/me          → apiHandler.GetMe
+```
+
+### 3. Health Check
+
+`GET /health` → `{"status":"ok","framework":"Gin","db":"connected"}`
+- Ping MongoDB, fail → `{"db":"disconnected"}` status 503
+
+### 4. gin/cmd/main.go — Graceful shutdown
+
+### 5. gin/Dockerfile
 
 ```dockerfile
 FROM golang:1.22-alpine AS builder
@@ -99,24 +114,25 @@ EXPOSE 8080
 CMD ["./server"]
 ```
 
-### 5. gin/fly.toml
+> Binary chạy từ `/app`, templates ở `/app/shared/templates/`. Trong fly.toml set `TEMPLATE_DIR=./shared/templates`.
+
+### 6. gin/fly.toml
 
 ```toml
 app = "goauth-gin"
 primary_region = "sin"
 
-[build]
-
 [env]
   PORT = "8080"
   MONGO_DB = "goauth"
+  APP_ENV = "production"
+  TEMPLATE_DIR = "./shared/templates"
 
 [http_service]
   internal_port = 8080
   force_https = true
   auto_stop_machines = true
   auto_start_machines = true
-  min_machines_running = 0
 
 [[http_service.checks]]
   grace_period = "10s"
@@ -124,46 +140,29 @@ primary_region = "sin"
   method = "GET"
   path = "/health"
   timeout = "5s"
-
-[[vm]]
-  memory = "256mb"
-  cpu_kind = "shared"
-  cpus = 1
 ```
 
-> Secrets: `fly secrets set MONGO_URI="..." JWT_SECRET="..."`
-
-### 6. gin/.dockerignore
-
-```
-.env
-*.md
-.git
-tmp/
-```
+> Secrets: `fly secrets set MONGO_URI="..." JWT_SECRET="..." -a goauth-gin`
 
 ---
 
-## Anti-Patterns (KHÔNG được làm)
+## Anti-Patterns
 
-❌ Không dùng `gin.LoadHTMLGlob("*.html")` — blocks bị override
-❌ Không để secrets trong fly.toml
-❌ Không quên copy templates vào Docker image
-❌ Không quên `/api/me` route dùng auth middleware
+❌ **KHÔNG dùng `gin.LoadHTMLGlob()`** — blocks bị override
+❌ Không hardcode template path — dùng `cfg.TemplateDir`
+❌ Không đặt secrets trong fly.toml
+❌ Không quên `APP_ENV=production` + `TEMPLATE_DIR` trong fly.toml
 
 ---
 
 ## Acceptance Criteria
 
 1. `cd gin && go build ./...` pass
-2. Truy cập `http://localhost:8081` → redirect `/login`
-3. `/health` → JSON status ok
-4. Signup → Login → Home (user) hoạt động
-5. Login admin → Dashboard
-6. Logout → redirect /login, không truy cập được /home
-7. `/api/me` + valid cookie → JSON user info (không có password)
-8. `/api/me` + no cookie → 401 JSON
-9. `docker build -f gin/Dockerfile .` → thành công
+2. Template render đúng (login, signup, home, dashboard, error)
+3. E2E: Signup → Login → Home → Logout
+4. Admin Login → Dashboard
+5. `/api/me` → JSON (no password) / 401
+6. Docker build thành công
 
 ---
 
@@ -171,19 +170,15 @@ tmp/
 
 | # | Yêu cầu | Trạng thái | Ghi chú |
 |---|---------|------------|---------|
-| 1 | Router setup đủ 10 routes | 🔲 | |
-| 2 | / redirect /login | 🔲 | |
-| 3 | /health JSON + ping DB | 🔲 | |
-| 4 | /home + /dashboard + /logout + /api/me dùng auth middleware | 🔲 | |
-| 5 | Load templates đúng cách | 🔲 | |
-| 6 | main.go graceful shutdown | 🔲 | |
-| 7 | Dockerfile multi-stage + copy templates | 🔲 | |
-| 8 | fly.toml app = "goauth-gin" | 🔲 | |
-| 9 | fly.toml health check config | 🔲 | |
-| 10 | fly.toml KHÔNG chứa secrets | 🔲 | |
-| 11 | E2E: Signup → Login → Home → Logout | 🔲 | |
-| 12 | E2E: Admin Login → Dashboard | 🔲 | |
-| 13 | API: /api/me trả JSON (no password) | 🔲 | |
+| 1 | Template load parse từng cặp (KHÔNG dùng LoadHTMLGlob) | 🔲 | |
+| 2 | Template dùng cfg.TemplateDir | 🔲 | |
+| 3 | 10 routes đăng ký | 🔲 | |
+| 4 | Health check ping DB | 🔲 | |
+| 5 | Graceful shutdown | 🔲 | |
+| 6 | Dockerfile copy templates đúng path | 🔲 | |
+| 7 | fly.toml có APP_ENV + TEMPLATE_DIR | 🔲 | |
+| 8 | fly.toml KHÔNG chứa secrets | 🔲 | |
+| 9 | E2E flow | 🔲 | |
 
 ---
 

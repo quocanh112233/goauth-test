@@ -1,123 +1,91 @@
-# Prompt 10 — Echo: Config + Model + Repository + Service + Handler + Middleware
+# Prompt 10 — net/http (stdlib): Router + Dockerfile + fly.toml
 
 ## Role
 
-Bạn là một **Go Backend Engineer** thành thạo Echo framework v4. Bạn hiểu Echo cần custom `echo.Renderer`, handler return `error`, và cookie dùng `*http.Cookie`.
+Bạn là một **Go DevOps Engineer** thành thạo Go `net/http` server.
 
 ---
 
 ## Context
 
-Phase 5. Echo — framework cuối cùng. Pattern rõ từ Gin/Fiber/stdlib.
-
-Điểm khác biệt Echo:
-- Handler: `func(c echo.Context) error` (return error)
-- Template: implement `echo.Renderer` interface
-- Cookie: `c.SetCookie(&http.Cookie{...})`, `c.Cookie("name")`
-- Context value: `c.Set()`, `c.Get()`
-
-**Business logic giống hệt Gin.**
+Prompt 08 (data) + 09 (logic) đã có đủ layers. Prompt này hoàn thiện: Router (Go 1.22+ ServeMux), Health Check, Dockerfile, fly.toml.
 
 ---
 
-## Dependencies (Prompt phụ thuộc)
+## Dependencies
 
 | Prompt | Đầu ra cần thiết |
 |--------|-----------------|
-| 01 | `shared/templates/*.html`, `echo/` folder skeleton |
-| 02 | MongoDB Atlas đã seed |
-| 03–05 | Gin implementation hoàn chỉnh (reference) |
+| 01 | `shared/templates/*.html` |
+| 08 | Config, DB, Model, Repository |
+| 09 | Service, Handler, Middleware, TemplateMap |
 
 ---
 
 ## Yêu cầu
 
-### 1. echo/go.mod
+### 1. stdlib/internal/router/router.go
 
-- Dependencies:
-  - `github.com/labstack/echo/v4 v4.12.0`
-  - `go.mongodb.org/mongo-driver v1.15.0`
-  - `golang.org/x/crypto v0.22.0`
-  - `github.com/golang-jwt/jwt/v5 v5.2.1`
-  - `github.com/joho/godotenv v1.5.1`
-
-### 2. Config: `Framework` = `"Echo"`, `Port` = `"8084"`
-
-### 3–5. db + model + repository
-
-- Copy từ Gin (User + Session, 6+4 methods)
-
-### 6. Service: copy từ Gin (5 methods)
-
-### 7. echo/internal/renderer/renderer.go
+Go 1.22+ method routing:
 
 ```go
-type TemplateRenderer struct {
-    templates map[string]*template.Template
-}
+mux := http.NewServeMux()
 
-func NewRenderer(templateDir string) *TemplateRenderer {
-    // Parse 5 pages: login, signup, home, dashboard, error
-}
+// Public
+mux.HandleFunc("GET /", redirectLogin)
+mux.HandleFunc("GET /health", healthHandler.HealthCheck)
+mux.HandleFunc("GET /login", authHandler.ShowLogin)
+mux.HandleFunc("POST /login", authHandler.Login)
+mux.HandleFunc("GET /signup", authHandler.ShowSignup)
+mux.HandleFunc("POST /signup", authHandler.Signup)
 
-func (t *TemplateRenderer) Render(w io.Writer, name string, data interface{}, c echo.Context) error {
-    return tmpl.ExecuteTemplate(w, "base", data)
-}
+// Protected — wrap middleware
+authMW := middleware.RequireAuth(service, jwtSecret, cfg.IsProduction)
+mux.Handle("GET /home", middleware.Chain(http.HandlerFunc(homeHandler.ShowHome), authMW))
+mux.Handle("GET /dashboard", middleware.Chain(http.HandlerFunc(dashHandler.ShowDashboard), authMW))
+mux.Handle("POST /logout", middleware.Chain(http.HandlerFunc(authHandler.Logout), authMW))
+mux.Handle("GET /api/me", middleware.Chain(http.HandlerFunc(apiHandler.GetMe), authMW))
 ```
 
-### 8. Handler (Echo API)
+### 2. Health Check
 
-- Cookie:
-  ```go
-  c.SetCookie(&http.Cookie{
-      Name: "access_token", Value: accessToken,
-      MaxAge: 1800, Path: "/",
-      HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
-  })
-  c.SetCookie(&http.Cookie{
-      Name: "refresh_token", Value: refreshToken,
-      MaxAge: 604800, Path: "/",
-      HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
-  })
-  ```
-- Redirect: `return c.Redirect(http.StatusSeeOther, "/home")` hoặc `/dashboard`
-- Logout POST: xóa 2 cookies + session DB
-- Handler **return error** — return `nil` sau redirect
+`{"status":"ok","framework":"net/http","db":"connected"}`
 
-### 9. home.go + dashboard.go + api.go
+### 3. Graceful shutdown
 
-- Home: `c.Get("user").(*model.User)` → render `home`
-- Dashboard: check admin → render `dashboard`
-- API: `c.JSON(200, map[string]interface{}{"user": user})`
+```go
+srv := &http.Server{Addr: ":" + cfg.Port, Handler: mux}
+go func() { srv.ListenAndServe() }()
+quit := make(chan os.Signal, 1)
+signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+<-quit
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+srv.Shutdown(ctx)
+db.Disconnect(client)
+```
 
-### 10. Middleware
+### 4. Dockerfile + fly.toml
 
-Echo signature: `func(next echo.HandlerFunc) echo.HandlerFunc`
-- Auto-refresh logic giống Gin
-- `c.Set("user", user)` / `c.Get("user")`
-- HTML redirect vs API 401
+fly.toml:
+```toml
+app = "goauth-stdlib"
 
-### 11. echo/.env.example
-
-`PORT=8084`
-
----
-
-## Anti-Patterns (KHÔNG được làm)
-
-❌ Không quên implement `echo.Renderer`
-❌ Không quên return error trong handler
-❌ Không quên 2 cookies
-❌ Không dùng GET cho logout
+[env]
+  PORT = "8080"
+  MONGO_DB = "goauth"
+  APP_ENV = "production"
+  TEMPLATE_DIR = "./shared/templates"
+```
 
 ---
 
 ## Acceptance Criteria
 
-1. `cd echo && go build ./...` pass
-2. TemplateRenderer implement `echo.Renderer`
-3. Service/Repository giống hệt Gin
-4. Login set 2 cookies, redirect theo role
+1. `cd stdlib && go build ./...` pass
+2. `go.mod` KHÔNG chứa framework
+3. E2E: Signup → Login → Home → Logout
+4. Docker build thành công
 
 ---
 
@@ -125,19 +93,13 @@ Echo signature: `func(next echo.HandlerFunc) echo.HandlerFunc`
 
 | # | Yêu cầu | Trạng thái | Ghi chú |
 |---|---------|------------|---------|
-| 1 | go.mod echo/v4 + dependencies | 🔲 | |
-| 2 | Config.Framework = "Echo", Port = "8084" | 🔲 | |
-| 3 | Model: User (Phone, json:"-") + Session | 🔲 | |
-| 4 | UserRepo 6 + SessionRepo 4 methods | 🔲 | |
-| 5 | AuthService 5 methods | 🔲 | |
-| 6 | TemplateRenderer parse 5 pages | 🔲 | |
-| 7 | Handler set 2 cookies | 🔲 | |
-| 8 | Login redirect theo role | 🔲 | |
-| 9 | Logout POST | 🔲 | |
-| 10 | Dashboard check admin | 🔲 | |
-| 11 | GetMe JSON (no password) | 🔲 | |
-| 12 | Middleware auto-refresh | 🔲 | |
-| 13 | Handler return error | 🔲 | |
+| 1 | Go 1.22+ method routing | 🔲 | |
+| 2 | 10 routes | 🔲 | |
+| 3 | Protected routes wrap middleware.Chain | 🔲 | |
+| 4 | Health check | 🔲 | |
+| 5 | Graceful shutdown | 🔲 | |
+| 6 | fly.toml: APP_ENV + TEMPLATE_DIR | 🔲 | |
+| 7 | E2E flow | 🔲 | |
 
 ---
 

@@ -1,87 +1,59 @@
-# Prompt 12 — GitHub Actions CI/CD + Makefile hoàn chỉnh
+# Prompt 12 — Echo: Router + Dockerfile + fly.toml
 
 ## Role
 
-Bạn là một **DevOps Engineer** thành thạo GitHub Actions và Fly.io CLI.
+Bạn là một **Go DevOps Engineer** thành thạo Echo v4 và Fly.io.
 
 ---
 
 ## Context
 
-Phase 6. Tất cả 4 apps hoàn chỉnh. Setup CI/CD tự động deploy khi push + Makefile cho dev workflow.
+Prompt 11 đã có đủ layers. Hoàn thiện app.
 
 ---
 
-## Dependencies (Prompt phụ thuộc)
+## Dependencies
 
 | Prompt | Đầu ra cần thiết |
 |--------|-----------------|
-| 05 | Gin Dockerfile + fly.toml |
-| 07 | Fiber Dockerfile + fly.toml |
-| 09 | stdlib Dockerfile + fly.toml |
-| 11 | Echo Dockerfile + fly.toml |
+| 01 | `shared/templates/*.html` |
+| 11 | Echo: tất cả layers |
 
 ---
 
 ## Yêu cầu
 
-### 1–4. GitHub Actions Workflows
+### 1. echo/internal/router/router.go
 
-4 files: `deploy-gin.yml`, `deploy-fiber.yml`, `deploy-stdlib.yml`, `deploy-echo.yml`
+- `e.Renderer = renderer.NewRenderer(cfg.TemplateDir)`
+- `e.Use(echomiddleware.Logger(), echomiddleware.Recover())`
+- 10 routes (giống pattern Gin prompt05)
 
-Mỗi file:
-- Trigger: push to `main`, paths: `<approach>/**` + `shared/**`
-- Token riêng: `FLY_API_TOKEN_<APPROACH>`
-- `flyctl deploy --remote-only`
+### 2. Health Check
 
-### 5. Makefile
+`{"status":"ok","framework":"Echo","db":"connected"}`
 
-```makefile
-# Local Development
-run-gin:     ## Port 8081
-run-fiber:   ## Port 8082
-run-stdlib:  ## Port 8083
-run-echo:    ## Port 8084
-run-all:     ## Song song + trap 'kill 0' EXIT
+### 3. fly.toml
 
-# Seed
-seed:        ## Seed admin (scripts/seed.go)
+```toml
+app = "goauth-echo"
 
-# Deploy
-deploy-gin deploy-fiber deploy-stdlib deploy-echo deploy-all
-
-# Secrets
-secrets-gin secrets-fiber secrets-stdlib secrets-echo secrets-all
-
-# Test
-test-gin test-fiber test-stdlib test-echo test-all test-coverage
-
-# Utility
-tidy:        ## go mod tidy cho tất cả modules
-help:        ## Hiển thị help
+[env]
+  PORT = "8080"
+  MONGO_DB = "goauth"
+  APP_ENV = "production"
+  TEMPLATE_DIR = "./shared/templates"
 ```
 
-### 6. README.md — section CI/CD
-
-- Hướng dẫn set GitHub Secrets
-- Lấy Fly.io token: `fly tokens create deploy -a <app>`
-
----
-
-## Anti-Patterns (KHÔNG được làm)
-
-❌ Không dùng chung 1 FLY_API_TOKEN
-❌ Không quên `shared/**` trong paths filter
-❌ Không dùng space thay tab trong Makefile
+### 4. Graceful shutdown: `e.Shutdown(ctx)`
 
 ---
 
 ## Acceptance Criteria
 
-1. Push `gin/` → chỉ trigger deploy-gin
-2. Push `shared/` → trigger cả 4
-3. `make help` hiển thị targets
-4. `make run-all` chạy 4 server song song
+1. E2E: Signup → Login → Home → Logout
+2. Docker build thành công
+3. fly.toml có APP_ENV + TEMPLATE_DIR
 
 ---
 
@@ -89,12 +61,12 @@ help:        ## Hiển thị help
 
 | # | Yêu cầu | Trạng thái | Ghi chú |
 |---|---------|------------|---------|
-| 1 | 4 workflow files đúng path filter | 🔲 | |
-| 2 | Mỗi workflow token riêng | 🔲 | |
-| 3 | shared/** trigger cả 4 | 🔲 | |
-| 4 | Makefile đủ targets (dev, deploy, test, utility) | 🔲 | |
-| 5 | Makefile run-all parallel + trap | 🔲 | |
-| 6 | README CI/CD section | 🔲 | |
+| 1 | Renderer dùng cfg.TemplateDir | 🔲 | |
+| 2 | 10 routes | 🔲 | |
+| 3 | Health check | 🔲 | |
+| 4 | Graceful shutdown | 🔲 | |
+| 5 | fly.toml: APP_ENV + TEMPLATE_DIR | 🔲 | |
+| 6 | E2E flow | 🔲 | |
 
 ---
 

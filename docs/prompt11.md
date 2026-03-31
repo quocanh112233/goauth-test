@@ -1,66 +1,102 @@
-# Prompt 11 — Echo: Router + Dockerfile + fly.toml
+# Prompt 11 — Echo: Config + Model + Repository + Service + Handler + Middleware
 
 ## Role
 
-Bạn là một **Go DevOps Engineer** thành thạo Echo v4 và Fly.io.
+Bạn là một **Go Backend Engineer** thành thạo Echo v4. Port Gin → Echo.
 
 ---
 
 ## Context
 
-Prompt 10 đã có đủ layers cho Echo. Prompt này hoàn thiện app.
+Phase 5. Echo — framework cuối. Conventions xem `docs/conventions.md`.
+
+**Điểm khác biệt Echo:**
+- Handler: `func(c echo.Context) error` (return error)
+- Template: implement `echo.Renderer` interface
+- Cookie: `c.SetCookie(&http.Cookie{...})`
+- Context: `c.Set()`, `c.Get()`
 
 ---
 
-## Dependencies (Prompt phụ thuộc)
+## Dependencies
 
 | Prompt | Đầu ra cần thiết |
 |--------|-----------------|
 | 01 | `shared/templates/*.html` |
-| 10 | Echo: tất cả layers |
+| 02 | MongoDB Atlas đã seed |
+| 03–05 | Gin implementation (reference) |
 
 ---
 
 ## Yêu cầu
 
-### 1. echo/internal/router/router.go
+### 1. echo/go.mod
 
-- `e.Renderer = renderer.NewRenderer("../shared/templates")`
-- `e.Use(echomiddleware.Logger(), echomiddleware.Recover())`
-- Đăng ký routes:
-  ```
-  GET  /              → redirect /login
-  GET  /health        → healthHandler
-  GET  /login         → authHandler.ShowLogin
-  POST /login         → authHandler.Login
-  GET  /signup        → authHandler.ShowSignup
-  POST /signup        → authHandler.Signup
+- `github.com/labstack/echo/v4 v4.12.0`
+- + mongodb, crypto, jwt, godotenv
 
-  // Protected
-  GET  /home          → homeHandler.ShowHome
-  GET  /dashboard     → dashHandler.ShowDashboard
-  POST /logout        → authHandler.Logout
-  GET  /api/me        → apiHandler.GetMe
-  ```
+### 2. Config: `Framework = "Echo"`, `Port = "8084"`, **TemplateDir + IsProduction**
 
-### 2. Health Check
+### 3–6. db + model + repository + service — copy từ Gin
 
-`{"status":"ok","framework":"Echo","db":"connected"}`
+### 7. echo/internal/renderer/renderer.go
 
-### 3–6. main.go + Dockerfile + fly.toml + .dockerignore
+```go
+type TemplateRenderer struct {
+    templates map[string]*template.Template
+}
 
-- fly.toml: `app = "goauth-echo"`
-- Graceful shutdown: `e.Shutdown(ctx)`
+func NewRenderer(templateDir string) *TemplateRenderer {
+    r := &TemplateRenderer{templates: make(map[string]*template.Template)}
+    pages := []string{"login", "signup", "home", "dashboard", "error"}
+    for _, page := range pages {
+        r.templates[page] = template.Must(template.ParseFiles(
+            filepath.Join(templateDir, "base.html"),
+            filepath.Join(templateDir, page+".html"),
+        ))
+    }
+    return r
+}
+
+// Implement echo.Renderer interface
+func (t *TemplateRenderer) Render(w io.Writer, name string, data interface{}, c echo.Context) error {
+    return t.templates[name].ExecuteTemplate(w, "base", data)
+}
+```
+
+> Dùng `cfg.TemplateDir` — KHÔNG hardcode path.
+
+### 8. Handler
+
+Cookie dùng `cfg.IsProduction`:
+```go
+c.SetCookie(&http.Cookie{
+    Name: "access_token", Value: accessToken,
+    MaxAge: 1800, Path: "/",
+    HttpOnly: true, Secure: cfg.IsProduction, SameSite: http.SameSiteLaxMode,
+})
+```
+
+### 9. Middleware
+
+Echo signature: `func(next echo.HandlerFunc) echo.HandlerFunc`
+- Auto-refresh, HTML/API phân biệt — giống Gin logic
+
+---
+
+## Anti-Patterns
+
+❌ Không quên implement `echo.Renderer`
+❌ Không quên return error trong handler
+❌ Không hardcode `Secure: true`
 
 ---
 
 ## Acceptance Criteria
 
 1. `cd echo && go build ./...` pass
-2. E2E: Signup → Login → Home → Logout
-3. Admin Login → Dashboard
-4. `/api/me` → JSON
-5. Docker build thành công
+2. TemplateRenderer implement `echo.Renderer`
+3. Cookie Secure = cfg.IsProduction
 
 ---
 
@@ -68,14 +104,13 @@ Prompt 10 đã có đủ layers cho Echo. Prompt này hoàn thiện app.
 
 | # | Yêu cầu | Trạng thái | Ghi chú |
 |---|---------|------------|---------|
-| 1 | Set e.Renderer | 🔲 | |
-| 2 | Logger + Recover middleware | 🔲 | |
-| 3 | 10 routes | 🔲 | |
-| 4 | Health check | 🔲 | |
-| 5 | Auth middleware trên protected routes | 🔲 | |
-| 6 | Graceful shutdown | 🔲 | |
-| 7 | Dockerfile + fly.toml | 🔲 | |
-| 8 | E2E flow | 🔲 | |
+| 1 | Config: Framework="Echo", Port="8084" | 🔲 | |
+| 2 | Config: TemplateDir + IsProduction | 🔲 | |
+| 3 | Model/Repo/Service giống Gin | 🔲 | |
+| 4 | TemplateRenderer (cfg.TemplateDir, 5 pages) | 🔲 | |
+| 5 | Cookie Secure = cfg.IsProduction | 🔲 | |
+| 6 | Middleware auto-refresh | 🔲 | |
+| 7 | Handler return error | 🔲 | |
 
 ---
 
